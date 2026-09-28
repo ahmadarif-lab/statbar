@@ -32,10 +32,10 @@
 > brew install --cask ahmadarif-lab/tap/statbar
 > ```
 >
-> It adds the `ahmadarif-lab/tap` tap, clears the quarantine flag so the app opens straight away —
-> no Gatekeeper warning to click through — and launches it once installed.
+> It adds the `ahmadarif-lab/tap` tap and clears the quarantine flag, so the app opens straight
+> away — no Gatekeeper warning to click through. Then open **StatBar** from Applications.
 
-StatBar starts itself at login from the first launch onwards (via `SMAppService`). Turn that off
+StatBar starts itself at login from that first launch onwards (via `SMAppService`). Turn that off
 under **Settings → General → Start at login**, or in System Settings → General → Login Items.
 
 ### Manual install (DMG)
