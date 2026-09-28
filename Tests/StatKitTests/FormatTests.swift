@@ -36,6 +36,9 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(Format.rate(951, oneDecimal: true), "951 B/s")
         // 999.96 KB would print as "1000.0"; it rolls over to MB instead.
         XCTAssertEqual(Format.rate(999.96 * 1024, oneDecimal: true), "1 MB/s")
+        // At or above 100 the decimal is dropped so the menu bar stays narrow.
+        XCTAssertEqual(Format.rate(123.45 * 1024, oneDecimal: true), "123 KB/s")
+        XCTAssertEqual(Format.rate(99.95 * 1024, oneDecimal: true), "100 KB/s")
     }
 
     func testBitRates() {

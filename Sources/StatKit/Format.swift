@@ -13,9 +13,10 @@ public enum Format {
     }
 
     /// "1.2 MB/s", or "1.2M" when `compact`. `oneDecimal` rounds to one
-    /// decimal and drops it when it's zero ("41.4 KB/s", "70 KB/s");
-    /// otherwise there's a decimal only below 10. `bits` reports network
-    /// style: "12.5 Mb/s" in powers of 1000.
+    /// decimal and drops it when it's zero ("41.4 KB/s", "70 KB/s"), but
+    /// only below 100 -- at or above that it's a whole number ("123 KB/s"),
+    /// keeping the menu bar narrow. Otherwise there's a decimal only below
+    /// 10. `bits` reports network style: "12.5 Mb/s" in powers of 1000.
     public static func rate(_ bytesPerSecond: Double, compact: Bool = false, oneDecimal: Bool = false, bits: Bool = false) -> String {
         var value = bytesPerSecond.isFinite ? max(bytesPerSecond, 0) : 0
         let base: Double = bits ? 1000 : 1024
@@ -67,7 +68,9 @@ public enum Format {
         if index == 0 { return "\(Int(value.rounded()))\(separator)\(units[0])" }
         let tenths = (value * 10).rounded()
         let text: String
-        if oneDecimal {
+        if oneDecimal && value >= 100 {
+            text = "\(Int(value.rounded()))"
+        } else if oneDecimal {
             text = tenths.truncatingRemainder(dividingBy: 10) == 0 ? "\(Int(tenths / 10))" : String(format: "%.1f", tenths / 10)
         } else {
             text = value < 10 ? String(format: "%.1f", value) : "\(Int(value.rounded()))"

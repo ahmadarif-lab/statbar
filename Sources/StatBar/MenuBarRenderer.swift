@@ -120,7 +120,9 @@ enum MenuBarRenderer {
             return (text(arrow, rateFont), text(number, rateFont), text(unit, rateFont), y)
         }
         let arrowWidth = ceil(text("↓", rateFont).size().width)
-        let numberWidth = ceil(text("999.9", rateFont).size().width)
+        // 100+ rounds to a whole number ("123"), so "99.9" is the widest
+        // the number column ever needs to hold.
+        let numberWidth = ceil(text("99.9", rateFont).size().width)
         let unitWidth = ceil(["KB/s", "MB/s", "GB/s", "Kb/s", "Mb/s", "Gb/s"].map { text($0, rateFont).size().width }.max() ?? 0)
         let gap: CGFloat = 1.5
         let key = rows.map { $0.1.string + $0.2.string }.joined(separator: ",")
