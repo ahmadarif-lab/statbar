@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon.png" alt="StatBar app icon" width="128">
+  <img src="Resources/AppIcon.webp" alt="StatBar app icon" width="128">
 </p>
 
 <h1 align="center">StatBar</h1>

@@ -20,13 +20,15 @@ BIN_DIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 cp "$BIN_DIR/StatBar" "$CONTENTS/MacOS/StatBar"
 cp "$ROOT_DIR/Resources/Info.plist" "$CONTENTS/Info.plist"
 
-if [ -f "$ROOT_DIR/Resources/AppIcon.png" ]; then
+ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.webp"
+if [ -f "$ICON_SOURCE" ]; then
     echo "Building app icon…"
     ICONSET="$(mktemp -d)/AppIcon.iconset"
     mkdir -p "$ICONSET"
     for size in 16 32 128 256 512; do
-        sips -z "$size" "$size" "$ROOT_DIR/Resources/AppIcon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-        sips -z $((size * 2)) $((size * 2)) "$ROOT_DIR/Resources/AppIcon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+        # The source is WebP to keep the repo small; iconutil wants PNGs.
+        sips -s format png -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        sips -s format png -z $((size * 2)) $((size * 2)) "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
     done
     iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 fi
