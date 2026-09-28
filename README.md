@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="Resources/screenshots/overview.png" alt="StatBar's CPU & GPU, Memory, Network, Disks and Battery dropdowns" width="100%">
+  <img src="Resources/screenshots/overview.webp" alt="StatBar's CPU & GPU, Memory, Network, Disks and Battery dropdowns" width="100%">
 </p>
 
 ## Install
