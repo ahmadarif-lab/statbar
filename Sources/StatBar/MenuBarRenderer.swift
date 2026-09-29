@@ -2,18 +2,19 @@ import AppKit
 import StatKit
 
 /// Draws every shown menu bar item into one template image, and remembers
-/// where each item landed so a click can be routed to its dropdown.
+/// where each slot landed so a click can be routed to its dropdown.
 ///
 /// One status item holding all readouts, rather than a status item per
-/// readout, is what lets the items sit close together: macOS puts its own
-/// wide gap between separate status items. A template image lets macOS
-/// tint it for light/dark menu bars and the highlighted state.
+/// readout, keeps them together: macOS places separate status items on
+/// their own, so other apps' items end up wedged between them, and puts
+/// its own wide gap between them. A template image lets macOS tint it for
+/// light/dark menu bars and the highlighted state.
 @MainActor
 enum MenuBarRenderer {
     struct Rendered {
         let image: NSImage
-        /// Horizontal extent of each item within the image.
-        let frames: [(item: StatItem, minX: CGFloat, maxX: CGFloat)]
+        /// Horizontal extent of each slot within the image.
+        let frames: [ClosedRange<CGFloat>]
     }
 
     private static let height: CGFloat = 22
@@ -37,28 +38,43 @@ enum MenuBarRenderer {
     /// menu bar's entry.
     private static var cache: [String: Rendered] = [:]
 
-    static func render(_ items: [StatItem], monitor: Monitor, showCPUGraph: Bool, itemSpacing: CGFloat) -> Rendered {
-        let groups = items.map { ($0, segments(for: $0, monitor: monitor, showCPUGraph: showCPUGraph)) }
-        let key = "\(itemSpacing)#" + groups.map { item, segments in
-            item.rawValue + ":" + segments.map(\.key).joined(separator: "|")
-        }.joined(separator: "/")
+    /// `slots` are drawn left to right, `slotSpacing` apart; the items
+    /// within one slot (CPU and GPU) sit `itemSpacing` apart.
+    static func render(_ slots: [[StatItem]], monitor: Monitor, showCPUGraph: Bool, itemSpacing: CGFloat, slotSpacing: CGFloat) -> Rendered {
+        let groups = slots.map { items in
+            items.map { ($0, segments(for: $0, monitor: monitor, showCPUGraph: showCPUGraph)) }
+        }
+        let key = "\(itemSpacing),\(slotSpacing)#" + groups.map { items in
+            items.map { item, segments in
+                item.rawValue + ":" + segments.map(\.key).joined(separator: "|")
+            }.joined(separator: "/")
+        }.joined(separator: "//")
         if let cached = cache[key] { return cached }
 
-        var frames: [(item: StatItem, minX: CGFloat, maxX: CGFloat)] = []
+        var frames: [ClosedRange<CGFloat>] = []
+        var starts: [[CGFloat]] = []
         var x: CGFloat = 0
-        for (index, (item, segments)) in groups.enumerated() {
-            if index > 0 { x += itemSpacing }
-            let width = segments.map(\.width).reduce(0, +) + innerSpacing * CGFloat(max(segments.count - 1, 0))
-            frames.append((item, x, x + width))
-            x += width
+        for (slotIndex, items) in groups.enumerated() {
+            if slotIndex > 0 { x += slotSpacing }
+            let slotStart = x
+            var itemStarts: [CGFloat] = []
+            for (index, (_, segments)) in items.enumerated() {
+                if index > 0 { x += itemSpacing }
+                itemStarts.append(x)
+                x += segments.map(\.width).reduce(0, +) + innerSpacing * CGFloat(max(segments.count - 1, 0))
+            }
+            frames.append(slotStart...x)
+            starts.append(itemStarts)
         }
 
         let image = NSImage(size: NSSize(width: max(ceil(x), 1), height: height), flipped: false) { _ in
-            for ((_, segments), frame) in zip(groups, frames) {
-                var x = frame.minX
-                for segment in segments {
-                    segment.draw(x)
-                    x += segment.width + innerSpacing
+            for (items, itemStarts) in zip(groups, starts) {
+                for ((_, segments), start) in zip(items, itemStarts) {
+                    var x = start
+                    for segment in segments {
+                        segment.draw(x)
+                        x += segment.width + innerSpacing
+                    }
                 }
             }
             return true

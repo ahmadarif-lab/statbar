@@ -2,44 +2,50 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// One status item per shown readout, like iStat Menus, each opening its
-/// own dropdown anchored below it.
+/// A single status item showing every readout side by side, like iStat
+/// Menus, each slot opening its own dropdown anchored below it.
 ///
-/// The items are plain NSStatusItems rather than SwiftUI MenuBarExtras:
+/// It's a plain NSStatusItem rather than a SwiftUI MenuBarExtra:
 /// MenuBarExtra's visibility binding looped on macOS 27, and its buttons
 /// carry padding that can't be trimmed.
 ///
-/// macOS remembers where each status item sits, by name, and puts it back
-/// there -- whatever order they're created in, and not always in the order
-/// they were last left in once slots come and go. So the status items are
-/// interchangeable slots: every refresh reads where each actually sits and
-/// gives the leftmost the first readout in the Settings order, and so on.
+/// One item rather than one per slot: macOS places each status item on its
+/// own, so separate items drift apart and other apps' items end up wedged
+/// between them. Drawn as one strip, the readouts always stay together, in
+/// Settings order; a click is mapped back to its slot.
 @MainActor
 final class StatusBarController: NSObject {
     private let monitor: Monitor
-    /// Left to right.
-    private var slots: [NSStatusItem] = []
-    /// The readout each slot shows, left to right.
-    /// Slots as they sit in the menu bar, left to right; `slotKinds` and
-    /// `slotItems` line up with this.
-    private var orderedSlots: [NSStatusItem] = []
+    private let statusItem: NSStatusItem
+    /// The slots drawn, left to right; lines up with `slotFrames`.
     private var slotKinds: [MenuBarSlot] = []
-    /// The items each slot draws, left to right.
-    private var slotItems: [[StatItem]] = []
+    /// Each slot's horizontal extent within the item's image.
+    private var slotFrames: [ClosedRange<CGFloat>] = []
     private var subscriptions: Set<AnyCancellable> = []
 
     private var panel: DropdownPanel?
     private var openItem: MenuBarSlot?
     private var outsideClickMonitor: Any?
-    /// When the open panel last closed. A click on a status item already
+    /// When the open panel last closed. A click on the status item already
     /// closes the panel (as an outside click, or by taking its focus) before
-    /// the click itself arrives; without this, clicking the open item would
+    /// the click itself arrives; without this, clicking the open slot would
     /// reopen it instead of toggling it shut.
     private var lastDismissal: (item: MenuBarSlot, time: Date)?
 
     init(monitor: Monitor) {
         self.monitor = monitor
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
+        // Reuses the first per-slot item's name so the item keeps where the
+        // user last put it.
+        statusItem.autosaveName = "StatBar.slot0"
+        statusItem.isVisible = true
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(clicked(_:))
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            button.imagePosition = .imageOnly
+        }
         // The monitor publishes several values per tick; one redraw covers them.
         monitor.objectWillChange
             .debounce(for: .milliseconds(30), scheduler: RunLoop.main)
@@ -53,80 +59,58 @@ final class StatusBarController: NSObject {
     }
 
     private func refresh() {
+        guard let button = statusItem.button else { return }
         let defaults = UserDefaults.standard
         let layout = defaults.menuBarSlots
         let kinds = layout.map(\.slot)
-        let items = layout.map(\.items)
-        if kinds.count != slots.count { rebuildSlots(count: kinds.count) }
-        let positioned = slotsLeftToRight()
-        if kinds != slotKinds || positioned != orderedSlots { close() }
-        orderedSlots = positioned
+        if kinds != slotKinds { close() }
         slotKinds = kinds
-        slotItems = items
 
-        let showGraph = defaults.bool(forKey: SettingsKey.cpuGraph)
         let padding = CGFloat(defaults.double(forKey: SettingsKey.itemPadding))
-        for (index, slot) in orderedSlots.enumerated() where index < slotItems.count {
-            // CPU and GPU share a slot, a small gap apart.
-            let image = MenuBarRenderer.render(slotItems[index], monitor: monitor, showCPUGraph: showGraph, itemSpacing: 5).image
-            guard let button = slot.button else { continue }
-            if button.image !== image { button.image = image }
-            button.tag = index
-            button.setAccessibilityLabel("StatBar \(slotKinds[index].title)")
-            // A fixed length trims the button's built-in side padding, so
-            // neighbouring readouts sit close together.
-            let length = ceil(image.size.width + padding * 2)
-            if slot.length != length { slot.length = length }
-        }
+        // CPU and GPU share a slot, a small gap apart; slots stand further
+        // apart, the padding on either side standing in for the gap macOS
+        // used to put between separate status items.
+        let rendered = MenuBarRenderer.render(
+            layout.map(\.items), monitor: monitor,
+            showCPUGraph: defaults.bool(forKey: SettingsKey.cpuGraph),
+            itemSpacing: 5, slotSpacing: 8 + padding * 2
+        )
+        slotFrames = rendered.frames
+        if button.image !== rendered.image { button.image = rendered.image }
+        button.setAccessibilityLabel("StatBar " + kinds.map(\.title).joined(separator: ", "))
+        // A fixed length trims the button's built-in side padding.
+        let length = ceil(rendered.image.size.width + padding * 2)
+        if statusItem.length != length { statusItem.length = length }
     }
 
-    /// The slots in their on-screen order. Until macOS has placed them all
-    /// (a zero-width window), creation order stands in.
-    private func slotsLeftToRight() -> [NSStatusItem] {
-        let frames = slots.map { $0.button?.window?.frame ?? .zero }
-        guard frames.allSatisfy({ $0.width > 0 }) else { return slots }
-        return slots.indices
-            .sorted { (frames[$0].minX, $0) < (frames[$1].minX, $1) }
-            .map { slots[$0] }
+    /// Where the image starts inside the button; the button centers it.
+    private func imageOffset(in button: NSStatusBarButton) -> CGFloat {
+        ((button.bounds.width - (button.image?.size.width ?? 0)) / 2).rounded(.down)
     }
 
-    /// Recreates the slots when the number of shown readouts changes. On
-    /// first appearance macOS puts each new status item to the left of the
-    /// existing ones, so they're created right to left.
-    private func rebuildSlots(count: Int) {
-        close()
-        for slot in slots {
-            NSStatusBar.system.removeStatusItem(slot)
+    /// The slot under a click, snapping to the nearest one when the click
+    /// lands in the gap between two (or the button's padding).
+    private func slotIndex(at x: CGFloat) -> Int? {
+        guard !slotFrames.isEmpty else { return nil }
+        func distance(_ frame: ClosedRange<CGFloat>) -> CGFloat {
+            frame.contains(x) ? 0 : min(abs(x - frame.lowerBound), abs(x - frame.upperBound))
         }
-        var created: [NSStatusItem] = []
-        for index in (0..<count).reversed() {
-            let slot = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            slot.autosaveName = "StatBar.slot\(index)"
-            slot.isVisible = true
-            if let button = slot.button {
-                button.target = self
-                button.action = #selector(clicked(_:))
-                button.sendAction(on: [.leftMouseDown, .rightMouseDown])
-                button.imagePosition = .imageOnly
-                button.tag = index
-            }
-            created.insert(slot, at: 0)
-        }
-        slots = created
-        orderedSlots = []
-        slotKinds = []
-        slotItems = []
+        return slotFrames.indices.min { distance(slotFrames[$0]) < distance(slotFrames[$1]) }
     }
 
     // MARK: - Clicks
 
     @objc private func clicked(_ button: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent, slotKinds.indices.contains(button.tag) else { return }
-        let item = slotKinds[button.tag]
+        guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseDown || event.modifierFlags.contains(.control) {
             showContextMenu(from: button)
             return
         }
+        // The event's own location is the button's center, not where the
+        // click landed, so read the cursor itself.
+        let x = NSEvent.mouseLocation.x - (button.window?.frame.minX ?? 0) - imageOffset(in: button)
+        guard let index = slotIndex(at: x), slotKinds.indices.contains(index) else { return }
+        let item = slotKinds[index]
         if openItem == item {
             close()
             return
@@ -134,7 +118,7 @@ final class StatusBarController: NSObject {
         if let lastDismissal, lastDismissal.item == item, Date().timeIntervalSince(lastDismissal.time) < 0.3 {
             return
         }
-        open(item, from: button)
+        open(item, at: index, from: button)
     }
 
     private func showContextMenu(from button: NSStatusBarButton) {
@@ -154,13 +138,16 @@ final class StatusBarController: NSObject {
 
     // MARK: - Dropdown
 
-    private func open(_ item: MenuBarSlot, from button: NSStatusBarButton) {
+    private func open(_ item: MenuBarSlot, at index: Int, from button: NSStatusBarButton) {
         close()
         guard let window = button.window else { return }
+        // Left edge lined up with the slot, top a few points below the bar.
+        let slotX = slotFrames.indices.contains(index) && index > 0
+            ? window.frame.minX + imageOffset(in: button) + slotFrames[index].lowerBound
+            : window.frame.minX
         let panel = DropdownPanel(
             content: Dropdown { Self.dropdown(for: item) }.environmentObject(monitor),
-            // Left edge lined up with the item, top a few points below the bar.
-            anchor: NSPoint(x: window.frame.minX, y: window.frame.minY - 3),
+            anchor: NSPoint(x: slotX, y: window.frame.minY - 3),
             screen: window.screen
         )
         panel.onResignKey = { [weak self] in
@@ -181,9 +168,7 @@ final class StatusBarController: NSObject {
     private func close() {
         if let openItem {
             lastDismissal = (openItem, Date())
-            if let index = slotKinds.firstIndex(of: openItem), orderedSlots.indices.contains(index) {
-                orderedSlots[index].button?.highlight(false)
-            }
+            statusItem.button?.highlight(false)
         }
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
         outsideClickMonitor = nil
