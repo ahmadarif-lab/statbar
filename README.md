@@ -72,7 +72,8 @@ brew uninstall --cask statbar      # or drag /Applications/StatBar.app to the Tr
 ## Features
 
 All items sit together in one menu bar group, in the order you set, so other apps' icons never end
-up between them. Each opens its own dropdown right below it. CPU and GPU share one item, since they
+up between them (turn off **Keep items together** to give each its own menu bar item instead). Each
+opens its own dropdown right below it. CPU and GPU share one item, since they
 share a dropdown.
 
 | Item | Dropdown |

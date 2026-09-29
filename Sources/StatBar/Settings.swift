@@ -106,6 +106,9 @@ enum SettingsKey {
     static let itemPadding = "menuBarItemPadding"
     /// Menu bar order, left to right, as "cpu,gpu,memory,...".
     static let itemOrder = "menuBarItemOrder"
+    /// Every slot in one status item, so other apps' items can't end up
+    /// between them, rather than one status item each.
+    static let groupItems = "menuBarGroupItems"
 
     static let showInDock = "showInDock"
     static let autoCheckUpdates = "autoCheckUpdates"
@@ -200,6 +203,7 @@ extension UserDefaults {
             SettingsKey.processCount(for: .disk): 5,
             SettingsKey.itemPadding: 2.0,
             SettingsKey.itemOrder: StatItem.encode(StatItem.allCases),
+            SettingsKey.groupItems: true,
             SettingsKey.showInDock: false,
             SettingsKey.autoCheckUpdates: true,
             SettingsKey.publicIP: true,

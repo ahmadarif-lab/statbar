@@ -206,6 +206,7 @@ private struct SettingsOptions: View {
     @AppStorage(SettingsKey.cpuTemperature) private var cpuTemperature = false
     @AppStorage(SettingsKey.itemPadding) private var itemPadding = 2.0
     @AppStorage(SettingsKey.itemOrder) private var itemOrder = StatItem.encode(StatItem.allCases)
+    @AppStorage(SettingsKey.groupItems) private var groupItems = true
     @State private var compactSystemSpacing = SystemMenuBarSpacing.isCompact
     @AppStorage(StatItem.cpu.showKey) private var showCPU = StatItem.cpu.shownByDefault
     @AppStorage(StatItem.gpu.showKey) private var showGPU = StatItem.gpu.shownByDefault
@@ -297,6 +298,7 @@ private struct SettingsOptions: View {
                     }
                 }
             }
+            Toggle("Keep items together", isOn: $groupItems)
             Picker("Item padding", selection: $itemPadding) {
                 Text("None").tag(0.0)
                 Text("Tight").tag(2.0)
@@ -309,7 +311,7 @@ private struct SettingsOptions: View {
         } header: {
             Text("Menu Bar")
         } footer: {
-            Text("Drag ≡ to change the order. Compact spacing is a macOS setting for every app's icons and applies after you log out.")
+            Text("Drag ≡ to change the order. Keep items together draws them all in one menu bar item, so other apps' icons can't end up between them; off, each gets its own item. Compact spacing is a macOS setting for every app's icons and applies after you log out.")
                 .foregroundStyle(.secondary)
         }
         Section("Behaviour") {
